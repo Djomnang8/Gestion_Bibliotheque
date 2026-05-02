@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-bibliotheque
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: bibliotheque
+    ports:
+      - "3307:3306"          # port hôte 3307 pour éviter conflit avec un MySQL local
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - library-net
+
+  eureka-server:
+    image: eureka-server:0.0.1
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      - EUREKA_CLIENT_REGISTER-WITH-EUREKA=false
+      - EUREKA_CLIENT_FETCH-REGISTRY=false
+    depends_on:
+      - mysql
+    networks:
+      - library-net
+
+  service-livre:
+    image: service-livre:0.0.1
+    container_name: service-livre
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/bibliotheque?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      - mysql
+      - eureka-server
+    networks:
+      - library-net
+
+  service-emprunteur:
+    image: service-emprunteur:0.0.1
+    container_name: service-emprunteur
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/bibliotheque?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      - mysql
+      - eureka-server
+    networks:
+      - library-net
+
+  service-emprunt:
+    image: service-emprunt:0.0.1
+    container_name: service-emprunt
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/bibliotheque?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SERVICE_LIVRE_URL=http://service-livre:8081
+      - SERVICE_EMPRUNTEUR_URL=http://service-emprunteur:8082
+    depends_on:
+      - mysql
+      - eureka-server
+    networks:
+      - library-net
+
+  gateway-service:
+    image: gateway-service:0.0.1
+    container_name: gateway-service
+    ports:
+      - "8080:8080"
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_CLOUD_GATEWAY_ROUTES_0_URI=lb://service-livre
+      - SPRING_CLOUD_GATEWAY_ROUTES_0_PREDICATES_0=Path=/api/livres/**
+      - SPRING_CLOUD_GATEWAY_ROUTES_1_URI=lb://service-emprunteur
+      - SPRING_CLOUD_GATEWAY_ROUTES_1_PREDICATES_0=Path=/api/emprunteurs/**
+      - SPRING_CLOUD_GATEWAY_ROUTES_2_URI=lb://service-emprunt
+      - SPRING_CLOUD_GATEWAY_ROUTES_2_PREDICATES_0=Path=/api/emprunts/**
+    depends_on:
+      - eureka-server
+    networks:
+      - library-net
+
+volumes:
+  mysql_data:
+
+networks:
+  library-net:
+    driver: bridge
